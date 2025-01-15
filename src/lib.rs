@@ -4,8 +4,7 @@ pub use pallet::*;
 
 extern crate alloc;
 
-use alloc::boxed::Box;
-use alloc::vec::Vec;
+use alloc::{boxed::Box, vec::Vec};
 use frame_system::Config as SystemConfig;
 use sp_runtime::traits::{Hash, StaticLookup};
 
@@ -30,8 +29,9 @@ type AccountIdLookupOf<T> = <<T as SystemConfig>::Lookup as StaticLookup>::Sourc
 pub mod pallet {
 	use super::*;
 	use crate::weights::NftaaWeightInfo;
-	use frame_support::pallet_prelude::*;
-	use frame_support::{dispatch::GetDispatchInfo, traits::nonfungibles_v2::Trading};
+	use frame_support::{
+		dispatch::GetDispatchInfo, pallet_prelude::*, traits::nonfungibles_v2::Trading,
+	};
 	use frame_system::pallet_prelude::*;
 	use pallet_nfts::{
 		AttributeNamespace, BalanceOf, BlockNumberFor, CollectionConfigFor, CollectionSettings,

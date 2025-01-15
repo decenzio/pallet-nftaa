@@ -1,15 +1,21 @@
-use frame_support::{parameter_types, traits::VariantCountOf, weights::constants::RocksDbWeight};
+use frame_support::{
+	parameter_types,
+	traits::{ConstU32, ConstU64, VariantCountOf},
+	weights::constants::RocksDbWeight,
+};
 use frame_system::{mocking::MockBlock, EnsureRoot, EnsureSigned, GenesisConfig};
 use pallet_balances::AccountData;
-use sp_core::ConstU32;
-use sp_runtime::{
-	traits::{ConstU64, Verify},
-	AccountId32 as AccountId, BuildStorage, MultiSignature,
-};
+use sp_core::H256;
+use sp_runtime::{traits::Verify, AccountId32 as AccountId, BuildStorage, MultiSignature};
+
+pub type Balance = u128;
+pub const UNIT: Balance = 1;
 
 // Configure a mock runtime to test the pallet.
 #[frame_support::runtime]
 mod test_runtime {
+	use frame_support::runtime;
+
 	#[runtime::runtime]
 	#[runtime::derive(
 		RuntimeCall,
@@ -34,18 +40,17 @@ mod test_runtime {
 	pub type NFTs = pallet_nfts;
 
 	#[runtime::pallet_index(3)]
+	pub type Utility = pallet_utility;
+
+	#[runtime::pallet_index(4)]
 	pub type NFTAA = crate;
 }
-
-/// Balance of an account.
-pub type Balance = u128;
-pub const UNIT: Balance = 1;
 
 parameter_types! {
 	pub const SS58Prefix: u16 = 42;
 	pub const ExistentialDeposit: u128 = 500;
-	pub const CollectionDeposit: Balance = 0 * UNIT; // 1 UNIT deposit to create asset collection
-	pub const ItemDeposit: Balance = 0 * UNIT; // 1/100 UNIT deposit to create asset item
+	pub const CollectionDeposit: Balance = 0 * UNIT;
+	pub const ItemDeposit: Balance = 0 * UNIT;
 	pub const KeyLimit: u32 = 32;
 	pub const ValueLimit: u32 = 64;
 	pub const UniquesMetadataDepositBase: Balance = 0 * UNIT;
@@ -69,7 +74,7 @@ impl frame_system::Config for Test {
 	type RuntimeOrigin = RuntimeOrigin;
 	type RuntimeCall = RuntimeCall;
 	type RuntimeTask = RuntimeTask;
-	type Hash = sp_core::H256;
+	type Hash = H256;
 	type Hashing = sp_runtime::traits::BlakeTwo256;
 	type AccountId = AccountId;
 	type Lookup = sp_runtime::traits::IdentityLookup<AccountId>;
@@ -96,9 +101,7 @@ impl frame_system::Config for Test {
 
 impl pallet_balances::Config for Test {
 	type MaxLocks = ConstU32<50>;
-	/// The type for recording an account's balance.
 	type Balance = Balance;
-	/// The ubiquitous event type.
 	type RuntimeEvent = RuntimeEvent;
 	type DustRemoval = ();
 	type ExistentialDeposit = ExistentialDeposit;
@@ -111,13 +114,6 @@ impl pallet_balances::Config for Test {
 	type FreezeIdentifier = RuntimeFreezeReason;
 	type MaxFreezes = VariantCountOf<RuntimeFreezeReason>;
 	type DoneSlashHandler = ();
-}
-
-impl crate::Config for Test {
-	type RuntimeEvent = RuntimeEvent;
-	type RuntimeCall = RuntimeCall;
-	type NftaaWeightInfo = ();
-	type ChainId = ChainId;
 }
 
 pub type AccountPublic = <MultiSignature as Verify>::Signer;
@@ -150,6 +146,19 @@ impl pallet_nfts::Config for Test {
 	type Helper = ();
 	type WeightInfo = ();
 	type BlockNumberProvider = ();
+}
+
+impl pallet_utility::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type RuntimeCall = RuntimeCall;
+	type PalletsOrigin = OriginCaller;
+	type WeightInfo = ();
+}
+
+impl crate::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type RuntimeCall = RuntimeCall;
+	type NftaaWeightInfo = ();
 }
 
 // Build genesis storage according to the mock runtime.
