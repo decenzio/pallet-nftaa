@@ -11,9 +11,7 @@ The NFTAs pallet extends the NFTs pallet functionality by allowing NFTs to act a
 * Integration with Existing NFT Features
 * Account-based Permission Management
 
-To use it in your runtime, you need to implement the [`nftaa::Config`](TODO) trait.
-
-The supported dispatchable functions are documented in the [`nftaa::Call`](TODO) enum.
+To use it in your runtime, you need to implement the [`nfts::Config`](https://github.com/decenzio/polkadot-sdk/blob/d9f211f99cc6e2e899bf8286b43d6f146e396a6a/templates/parachain/runtime/src/configs/mod.rs#L382) trait. You also need to configure `pallet-nfts` and `pallet-utility` as those are required.
 
 ### Terminology
 
