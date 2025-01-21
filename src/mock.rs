@@ -1,151 +1,51 @@
+use crate as pallet_nftaa;
 use frame_support::{
-	parameter_types,
-	traits::{ConstU32, ConstU64, VariantCountOf},
-	weights::constants::RocksDbWeight,
+	construct_runtime, derive_impl, parameter_types, traits::AsEnsureOriginWithArg,
 };
-use frame_system::{mocking::MockBlock, EnsureRoot, EnsureSigned, GenesisConfig};
-use pallet_balances::AccountData;
-use sp_core::H256;
-use sp_runtime::{traits::Verify, AccountId32 as AccountId, BuildStorage, MultiSignature};
+use frame_system::GenesisConfig;
+use pallet_nfts::PalletFeatures;
+use sp_core::{ConstU32, ConstU64};
+use sp_runtime::{
+	traits::{IdentifyAccount, IdentityLookup, Verify},
+	BuildStorage, MultiSignature,
+};
+use enumflags2::BitFlags;
+use pallet_nfts::{
+	CollectionConfig, CollectionConfigFor, CollectionSettings, MintSettings,
+};
 
-pub type Balance = u128;
-pub const UNIT: Balance = 1;
+type Block = frame_system::mocking::MockBlock<Test>;
 
-// Configure a mock runtime to test the pallet.
-#[frame_support::runtime]
-mod test_runtime {
-	use frame_support::runtime;
+construct_runtime!(
+	pub enum Test
+	{
+		System: frame_system,
+		Balances: pallet_balances,
+		Utility: pallet_utility,
+		NFTs: pallet_nfts,
+		NFTAA: pallet_nftaa
+	}
+);
 
-	#[runtime::runtime]
-	#[runtime::derive(
-		RuntimeCall,
-		RuntimeEvent,
-		RuntimeError,
-		RuntimeOrigin,
-		RuntimeFreezeReason,
-		RuntimeHoldReason,
-		RuntimeSlashReason,
-		RuntimeLockId,
-		RuntimeTask
-	)]
-	pub struct Test;
+pub type Signature = MultiSignature;
+pub type AccountPublic = <Signature as Verify>::Signer;
+pub type AccountId = <AccountPublic as IdentifyAccount>::AccountId;
 
-	#[runtime::pallet_index(0)]
-	pub type System = frame_system;
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
+impl frame_system::Config for Test {
+	type AccountId = AccountId;
+	type Lookup = IdentityLookup<Self::AccountId>;
+	type Block = Block;
+	type AccountData = pallet_balances::AccountData<u64>;
+}
 
-	#[runtime::pallet_index(1)]
-	pub type Balances = pallet_balances;
-
-	#[runtime::pallet_index(2)]
-	pub type NFTs = pallet_nfts;
-
-	#[runtime::pallet_index(3)]
-	pub type Utility = pallet_utility;
-
-	#[runtime::pallet_index(4)]
-	pub type NFTAA = crate;
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig)]
+impl pallet_balances::Config for Test {
+	type AccountStore = System;
 }
 
 parameter_types! {
-	pub const SS58Prefix: u16 = 42;
-	pub const ExistentialDeposit: u128 = 500;
-	pub const CollectionDeposit: Balance = 0 * UNIT;
-	pub const ItemDeposit: Balance = 0 * UNIT;
-	pub const KeyLimit: u32 = 32;
-	pub const ValueLimit: u32 = 64;
-	pub const UniquesMetadataDepositBase: Balance = 0 * UNIT;
-	pub const AttributeDepositBase: Balance = 0 * UNIT;
-	pub const DepositPerByte: Balance = 0 * UNIT;
-	pub const UniquesStringLimit: u32 = 32;
-	pub const ApprovalsLimit: u32 = 1;
-	pub const ItemAttributesApprovalsLimit: u32 = 1;
-	pub const MaxTips: u32 = 1;
-	pub const MaxDeadlineDuration: u32 = 1;
-	pub const MaxAttributesPerCall: u32 = 10;
-	pub NftFeatures: pallet_nfts::PalletFeatures = pallet_nfts::PalletFeatures::all_enabled();
-	pub const ChainId: u32 = 42;
-}
-
-impl frame_system::Config for Test {
-	type RuntimeEvent = RuntimeEvent;
-	type BaseCallFilter = frame_support::traits::Everything;
-	type BlockWeights = ();
-	type BlockLength = ();
-	type RuntimeOrigin = RuntimeOrigin;
-	type RuntimeCall = RuntimeCall;
-	type RuntimeTask = RuntimeTask;
-	type Hash = H256;
-	type Hashing = sp_runtime::traits::BlakeTwo256;
-	type AccountId = AccountId;
-	type Lookup = sp_runtime::traits::IdentityLookup<AccountId>;
-	type Nonce = u64;
-	type Block = MockBlock<Test>;
-	type BlockHashCount = ConstU64<250>;
-	type DbWeight = RocksDbWeight;
-	type Version = ();
-	type PalletInfo = PalletInfo;
-	type AccountData = AccountData<Balance>;
-	type OnNewAccount = ();
-	type OnKilledAccount = ();
-	type SystemWeightInfo = ();
-	type SS58Prefix = SS58Prefix;
-	type OnSetCode = ();
-	type MaxConsumers = ConstU32<16>;
-	type SingleBlockMigrations = ();
-	type MultiBlockMigrator = ();
-	type PreInherents = ();
-	type PostInherents = ();
-	type PostTransactions = ();
-	type ExtensionsWeightInfo = ();
-}
-
-impl pallet_balances::Config for Test {
-	type MaxLocks = ConstU32<50>;
-	type Balance = Balance;
-	type RuntimeEvent = RuntimeEvent;
-	type DustRemoval = ();
-	type ExistentialDeposit = ExistentialDeposit;
-	type AccountStore = System;
-	type WeightInfo = pallet_balances::weights::SubstrateWeight<Test>;
-	type MaxReserves = ConstU32<50>;
-	type ReserveIdentifier = [u8; 8];
-	type RuntimeHoldReason = RuntimeHoldReason;
-	type RuntimeFreezeReason = RuntimeFreezeReason;
-	type FreezeIdentifier = RuntimeFreezeReason;
-	type MaxFreezes = VariantCountOf<RuntimeFreezeReason>;
-	type DoneSlashHandler = ();
-}
-
-pub type AccountPublic = <MultiSignature as Verify>::Signer;
-
-impl pallet_nfts::Config for Test {
-	type RuntimeEvent = RuntimeEvent;
-	type CollectionId = u32;
-	type ItemId = u32;
-	type Currency = Balances;
-	type ForceOrigin = EnsureRoot<AccountId>;
-	type CreateOrigin = EnsureSigned<AccountId>;
-	type CollectionDeposit = CollectionDeposit;
-	type Locker = ();
-	type ItemDeposit = ItemDeposit;
-	type MetadataDepositBase = UniquesMetadataDepositBase;
-	type AttributeDepositBase = AttributeDepositBase;
-	type DepositPerByte = DepositPerByte;
-	type StringLimit = UniquesStringLimit;
-	type KeyLimit = KeyLimit;
-	type ValueLimit = ValueLimit;
-	type ApprovalsLimit = ApprovalsLimit;
-	type ItemAttributesApprovalsLimit = ItemAttributesApprovalsLimit;
-	type MaxTips = MaxTips;
-	type MaxDeadlineDuration = MaxDeadlineDuration;
-	type MaxAttributesPerCall = MaxAttributesPerCall;
-	type Features = NftFeatures;
-	type OffchainSignature = MultiSignature;
-	type OffchainPublic = AccountPublic;
-	#[cfg(feature = "runtime-benchmarks")]
-	type Helper = ();
-	type WeightInfo = ();
-	type BlockNumberProvider = ();
+	pub storage Features: PalletFeatures = PalletFeatures::all_enabled();
 }
 
 impl pallet_utility::Config for Test {
@@ -155,13 +55,79 @@ impl pallet_utility::Config for Test {
 	type WeightInfo = ();
 }
 
+impl pallet_nfts::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type CollectionId = u32;
+	type ItemId = u32;
+	type Currency = Balances;
+	type CreateOrigin = AsEnsureOriginWithArg<frame_system::EnsureSigned<Self::AccountId>>;
+	type ForceOrigin = frame_system::EnsureRoot<Self::AccountId>;
+	type Locker = ();
+	type CollectionDeposit = ConstU64<2>;
+	type ItemDeposit = ConstU64<1>;
+	type MetadataDepositBase = ConstU64<1>;
+	type AttributeDepositBase = ConstU64<1>;
+	type DepositPerByte = ConstU64<1>;
+	type StringLimit = ConstU32<50>;
+	type KeyLimit = ConstU32<50>;
+	type ValueLimit = ConstU32<50>;
+	type ApprovalsLimit = ConstU32<10>;
+	type ItemAttributesApprovalsLimit = ConstU32<2>;
+	type MaxTips = ConstU32<10>;
+	type MaxDeadlineDuration = ConstU64<10000>;
+	type MaxAttributesPerCall = ConstU32<2>;
+	type Features = Features;
+	/// Off-chain = signature On-chain - therefore no conversion needed.
+	/// It needs to be From<MultiSignature> for benchmarking.
+	type OffchainSignature = Signature;
+	/// Using `AccountPublic` here makes it trivial to convert to `AccountId` via `into_account()`.
+	type OffchainPublic = AccountPublic;
+	type WeightInfo = ();
+	#[cfg(feature = "runtime-benchmarks")]
+	type Helper = ();
+	type BlockNumberProvider = frame_system::Pallet<Test>;
+}
+
 impl crate::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
 	type RuntimeCall = RuntimeCall;
 	type NftaaWeightInfo = ();
 }
 
+
+type AccountIdOf<Test> = <Test as frame_system::Config>::AccountId;
+
+pub fn account(id: u8) -> AccountIdOf<Test> {
+	[id; 32].into()
+}
+
+pub fn default_collection_config() -> CollectionConfigFor<Test> {
+	// Create a BitFlags instance with all required settings
+    let settings = BitFlags::EMPTY;
+    
+    CollectionConfig {
+        settings: CollectionSettings::from_disabled(settings),
+        max_supply: None,
+        mint_settings: MintSettings::default(),
+    }
+}
+
+
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	GenesisConfig::<Test>::default().build_storage().unwrap().into()
+	let mut t = GenesisConfig::<Test>::default().build_storage().unwrap();
+	 // Add balances for test accounts
+	 pallet_balances::GenesisConfig::<Test> {
+        balances: vec![
+            (account(1), 100_000_000_000), // First test account
+            (account(2), 100_000_000_000), // Second test account
+            (account(3), 100_000_000_000), // Third test account
+        ],
+    }
+    .assimilate_storage(&mut t)
+    .unwrap();
+	
+    let mut ext = sp_io::TestExternalities::new(t);
+    ext.execute_with(|| System::set_block_number(1));
+    ext
 }

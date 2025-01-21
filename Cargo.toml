@@ -31,18 +31,11 @@ pallet-utility = { workspace = true, default-features = false }
 sp-core = { default-features = true, workspace = true }
 sp-io = { default-features = true, workspace = true }
 
-pallet-balances = { workspace = true, default-features = false }
+pallet-balances = { workspace = true, default-features = true }
+enumflags2 = { workspace = true }
 
 [features]
-default = ["std", "runtime-benchmarks"]
-runtime-benchmarks = [
-    "frame-benchmarking/runtime-benchmarks",
-    "frame-support/runtime-benchmarks",
-    "frame-system/runtime-benchmarks",
-    "sp-runtime/runtime-benchmarks",
-    "pallet-nfts/runtime-benchmarks",
-    "pallet-utility/runtime-benchmarks",
-]
+default = ["std"]
 std = [
     "codec/std",
     "frame-benchmarking?/std",
@@ -52,12 +45,24 @@ std = [
     "sp-core/std",
     "sp-io/std",
     "sp-runtime/std",
-
-    "pallet-nfts/std",
+    "pallet-balances/std",
     "pallet-utility/std",
+    "pallet-nfts/std",
+]
+runtime-benchmarks = [
+    "frame-benchmarking/runtime-benchmarks",
+    "frame-support/runtime-benchmarks",
+    "frame-system/runtime-benchmarks",
+    "sp-runtime/runtime-benchmarks",
+    "pallet-balances/runtime-benchmarks",
+    "pallet-utility/runtime-benchmarks",
+    "pallet-nfts/runtime-benchmarks",
 ]
 try-runtime = [
     "frame-support/try-runtime",
     "frame-system/try-runtime",
     "sp-runtime/try-runtime",
+    "pallet-balances/try-runtime",
+    "pallet-utility/try-runtime",
+    "pallet-nfts/try-runtime",
 ]

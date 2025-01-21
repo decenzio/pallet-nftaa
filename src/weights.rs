@@ -11,6 +11,8 @@
 // ./target/release/parachain-template-node
 // benchmark
 // pallet
+// --runtime=./target/release/wbuild/parachain-template-runtime/parachain_template_runtime.wasm
+// --genesis-builder=runtime
 // --pallet
 // pallet_nftaa
 // --steps
@@ -29,51 +31,34 @@
 
 use frame_support::{traits::Get, weights::Weight};
 use core::marker::PhantomData;
+use crate as pallet_nftaa;
 
 /// Weight functions for `pallet_nftaa`.
 pub struct WeightInfo<T>(PhantomData<T>);
 impl<T: frame_system::Config> pallet_nftaa::WeightInfo for WeightInfo<T> {
 	/// Storage: `PalletNFTAA::NftAccounts` (r:1 w:1)
 	/// Proof: `PalletNFTAA::NftAccounts` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)
-	/// Storage: `PalletNFTS::Item` (r:1 w:0)
-	/// Proof: `PalletNFTS::Item` (`max_values`: None, `max_size`: Some(158), added: 2633, mode: `MaxEncodedLen`)
-	fn create_nftaa() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `314`
-		//  Estimated: `3623`
-		// Minimum execution time: 14_000_000 picoseconds.
-		Weight::from_parts(14_000_000, 0)
-			.saturating_add(Weight::from_parts(0, 3623))
-			.saturating_add(T::DbWeight::get().reads(2))
-			.saturating_add(T::DbWeight::get().writes(1))
-	}
-	/// Storage: `PalletNFTAA::NftAccounts` (r:1 w:1)
-	/// Proof: `PalletNFTAA::NftAccounts` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)
-	/// Storage: `PalletNFTS::Item` (r:1 w:1)
-	/// Proof: `PalletNFTS::Item` (`max_values`: None, `max_size`: Some(158), added: 2633, mode: `MaxEncodedLen`)
-	/// Storage: `PalletNFTS::Collection` (r:1 w:0)
-	/// Proof: `PalletNFTS::Collection` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
-	/// Storage: `PalletNFTS::Attribute` (r:1 w:0)
-	/// Proof: `PalletNFTS::Attribute` (`max_values`: None, `max_size`: Some(254), added: 2729, mode: `MaxEncodedLen`)
 	/// Storage: `PalletNFTS::CollectionConfigOf` (r:1 w:0)
 	/// Proof: `PalletNFTS::CollectionConfigOf` (`max_values`: None, `max_size`: Some(73), added: 2548, mode: `MaxEncodedLen`)
-	/// Storage: `PalletNFTS::ItemConfigOf` (r:1 w:0)
+	/// Storage: `PalletNFTS::Item` (r:1 w:1)
+	/// Proof: `PalletNFTS::Item` (`max_values`: None, `max_size`: Some(158), added: 2633, mode: `MaxEncodedLen`)
+	/// Storage: `PalletNFTS::Collection` (r:1 w:1)
+	/// Proof: `PalletNFTS::Collection` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
+	/// Storage: `PalletNFTS::CollectionRoleOf` (r:1 w:0)
+	/// Proof: `PalletNFTS::CollectionRoleOf` (`max_values`: None, `max_size`: Some(69), added: 2544, mode: `MaxEncodedLen`)
+	/// Storage: `PalletNFTS::ItemConfigOf` (r:1 w:1)
 	/// Proof: `PalletNFTS::ItemConfigOf` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
-	/// Storage: `PalletNFTS::Account` (r:0 w:2)
+	/// Storage: `PalletNFTS::Account` (r:0 w:1)
 	/// Proof: `PalletNFTS::Account` (`max_values`: None, `max_size`: Some(88), added: 2563, mode: `MaxEncodedLen`)
-	/// Storage: `PalletNFTS::ItemPriceOf` (r:0 w:1)
-	/// Proof: `PalletNFTS::ItemPriceOf` (`max_values`: None, `max_size`: Some(89), added: 2564, mode: `MaxEncodedLen`)
-	/// Storage: `PalletNFTS::PendingSwapOf` (r:0 w:1)
-	/// Proof: `PalletNFTS::PendingSwapOf` (`max_values`: None, `max_size`: Some(71), added: 2546, mode: `MaxEncodedLen`)
-	fn transfer_nftaa() -> Weight {
+	fn mint() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `607`
-		//  Estimated: `3719`
-		// Minimum execution time: 43_000_000 picoseconds.
-		Weight::from_parts(44_000_000, 0)
-			.saturating_add(Weight::from_parts(0, 3719))
+		//  Measured:  `388`
+		//  Estimated: `3623`
+		// Minimum execution time: 37_000_000 picoseconds.
+		Weight::from_parts(37_000_000, 0)
+			.saturating_add(Weight::from_parts(0, 3623))
 			.saturating_add(T::DbWeight::get().reads(6))
-			.saturating_add(T::DbWeight::get().writes(6))
+			.saturating_add(T::DbWeight::get().writes(5))
 	}
 	/// Storage: `PalletNFTAA::NftAccounts` (r:1 w:0)
 	/// Proof: `PalletNFTAA::NftAccounts` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)

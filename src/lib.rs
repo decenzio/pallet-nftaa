@@ -7,6 +7,11 @@ extern crate alloc;
 use alloc::{boxed::Box, vec::Vec};
 use frame_system::Config as SystemConfig;
 use sp_runtime::traits::{Hash, StaticLookup};
+use frame_support::weights::Weight;
+use sp_runtime::traits::Dispatchable;
+use frame_support::{
+	dispatch::PostDispatchInfo
+};
 
 #[cfg(test)]
 mod mock;
@@ -25,18 +30,43 @@ pub const LOG_TARGET: &'static str = "runtime::nftaa";
 /// A type alias for the account ID type used in the dispatchable functions of this pallet.
 type AccountIdLookupOf<T> = <<T as SystemConfig>::Lookup as StaticLookup>::Source;
 
+pub trait WeightInfo {
+	fn mint() -> Weight;
+	fn proxy_call() -> Weight;
+}
+
+
+impl WeightInfo for () {
+	fn mint() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `314`
+		//  Estimated: `3623`
+		// Minimum execution time: 13_000_000 picoseconds.
+		Weight::from_parts(14_000_000,0)
+	}
+	fn proxy_call() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `395`
+		//  Estimated: `3623`
+		// Minimum execution time: 19_000_000 picoseconds.
+		Weight::from_parts(20_000,0)
+	}
+}
+
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
-	use crate::weights::NftaaWeightInfo;
 	use frame_support::{
-		dispatch::GetDispatchInfo, pallet_prelude::*, traits::nonfungibles_v2::Trading,
+		dispatch::{GetDispatchInfo, extract_actual_weight}, pallet_prelude::*, traits::{nonfungibles_v2::Trading, OriginTrait},
 	};
 	use frame_system::pallet_prelude::*;
 	use pallet_nfts::{
 		AttributeNamespace, BalanceOf, BlockNumberFor, CollectionConfigFor, CollectionSettings,
 		DepositBalanceOf, DestroyWitness, ItemPrice, MintSettings, MintWitness,
 	};
+
+	use pallet_utility::WeightInfo as UtilityWeightInfo;
+
 
 	#[pallet::config]
 	pub trait Config<I: 'static = ()>:
@@ -45,8 +75,10 @@ pub mod pallet {
 		/// Runtime event type for pallet
 		type RuntimeEvent: From<Event<Self, I>>
 			+ IsType<<Self as frame_system::Config>::RuntimeEvent>;
+
 		/// The overarching event type.
 		type RuntimeCall: From<Call<Self, I>>
+			+ Dispatchable<RuntimeOrigin = Self::RuntimeOrigin, PostInfo = PostDispatchInfo>
 			+ Encode
 			+ Decode
 			+ TypeInfo
@@ -58,7 +90,7 @@ pub mod pallet {
 			+ PartialEq
 			+ From<pallet_utility::Call<Self>>;
 		/// A type representing the weights required by the dispatchables of this pallet.
-		type NftaaWeightInfo: NftaaWeightInfo;
+		type NftaaWeightInfo: WeightInfo;
 	}
 
 	#[pallet::pallet]
@@ -87,8 +119,6 @@ pub mod pallet {
 
 	#[pallet::error]
 	pub enum Error<T, I = ()> {
-		/// The NFT is not owned by the account trying to perform the operation
-		NotNFTOwner,
 		/// The NFT has already been converted to an account
 		NFTAAAlreadyExists,
 		/// The NFTAA does not exist
@@ -106,14 +136,27 @@ pub mod pallet {
 			pallet_nfts::Pallet::<T, I>::item_price(&collection, &item).is_some()
 		}
 
+
+		/// Generate a deterministic address for an NFT
+		fn generate_nfta_address(collection: T::CollectionId, item: T::ItemId) -> T::AccountId {
+			// Encode the chain ID, collection ID, and item ID
+			let mut data = T::SS58Prefix::get().encode();
+			data.extend(collection.encode());
+			data.extend(item.encode());
+
+			let hash = T::Hashing::hash(&data);
+			T::AccountId::decode(&mut &hash.encode()[..])
+				.expect("Generated account ID is always valid")
+		}
+
 		/// Execute a call through an NFTAA
 		pub fn _proxy_call(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
 			item: T::ItemId,
 			call: Box<<T as Config<I>>::RuntimeCall>,
-		) -> DispatchResult {
-			let who = ensure_signed(origin)?;
+		) -> DispatchResultWithPostInfo {
+			let who = ensure_signed(origin.clone())?;
 
 			// Ensure the NFTAA exists
 			ensure!(
@@ -132,18 +175,22 @@ pub mod pallet {
 			ensure!(!Self::is_nft_listed(collection, item), Error::<T, I>::NFTAAListed);
 
 			// Get the NFTAA address
-			let nft_account = Self::generate_nft_address(collection, item);
+			let nft_account = NftAccounts::<T, I>::get((collection, item)).expect("We already checked that the NFTAA exists; qed");
+			
+			// Reconstruct logic from pallet_utility::Pallet::as_derivative
 
-			// Convert the call type and unbox/rebox it
-			let utility_call: <T as pallet_utility::Config>::RuntimeCall = (*call).into();
-			let boxed_utility_call = Box::new(utility_call);
+			// Change origin to the NFTAA account
+			let nft_origin = T::RuntimeOrigin::signed(nft_account);
+			let info = call.get_dispatch_info();
+			let result = call.dispatch(nft_origin);
 
-			// Execute the call using as_derivative
-			let result = pallet_utility::Pallet::<T>::as_derivative(
-				frame_system::RawOrigin::Signed(nft_account).into(),
-				0, // We use 0 as the derivative index
-				boxed_utility_call,
-			);
+			// Always take into account the base weight of this call.
+			let mut weight = <T as pallet_utility::Config>::WeightInfo::as_derivative()
+				.saturating_add(T::DbWeight::get().reads_writes(1, 1));
+
+			// Add the real weight of the dispatch.
+			weight = weight.saturating_add(extract_actual_weight(&result, &info));
+
 
 			// Emit event with the result
 			Self::deposit_event(Event::ProxyExecuted {
@@ -152,95 +199,38 @@ pub mod pallet {
 				result: result.map(|_| ()).map_err(|e| e.error),
 			});
 
-			// Return the result
-			result.map(|_| ()).map_err(|e| e.error)
+			result
+				.map_err(|mut err| {
+					err.post_info = Some(weight).into();
+					err
+				})
+				.map(|_| Some(weight).into())
+
 		}
 
-		/// Generate a deterministic address for an NFT
-		pub fn generate_nft_address(collection: T::CollectionId, item: T::ItemId) -> T::AccountId {
-			// Encode the chain ID, collection ID, and item ID
-			let mut data = T::SS58Prefix::get().encode();
-			data.extend(collection.encode());
-			data.extend(item.encode());
-
-			let hash = T::Hashing::hash(&data);
-			T::AccountId::decode(&mut &hash.encode()[..])
-				.expect("Generated account ID is always valid; qed")
-		}
-
-		/// Create an NFTAA for a given NFT
-		pub fn _create_nftaa(
+		// Mint an NFTAA
+		pub fn _nftaa_mint(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
 			item: T::ItemId,
-		) -> DispatchResult {
-			let who = ensure_signed(origin)?;
-
+			mint_to: AccountIdLookupOf<T>,
+			witness_data: Option<MintWitness<T::ItemId, DepositBalanceOf<T, I>>>
+		) -> DispatchResult{
+			let _who = ensure_signed(origin.clone())?;
 			// Check if the NFTAA already exists
 			ensure!(
 				!NftAccounts::<T, I>::contains_key((collection, item)),
 				Error::<T, I>::NFTAAAlreadyExists
 			);
-
-			// Ensure the caller owns the NFT using the parent pallet's ownership check
-			ensure!(
-				pallet_nfts::Pallet::<T, I>::owner(collection, item)
-					.map_or(false, |owner| owner == who),
-				Error::<T, I>::NotNFTOwner
-			);
-
-			// Generate the NFTAA address
-			let nft_account = Self::generate_nft_address(collection, item);
+			
+			let nft_account = Self::generate_nfta_address(collection, item);
+			pallet_nfts::Pallet::<T, I>::mint(origin.clone(), collection, item, mint_to, witness_data)?;
 
 			// Store the NFTAA
 			NftAccounts::<T, I>::insert((collection, item), nft_account.clone());
 
 			// Emit event
 			Self::deposit_event(Event::NFTAACreated { collection, item, nft_account });
-
-			Ok(())
-		}
-
-		/// Transfer NFTAA ownership
-		pub fn _transfer_nftaa(
-			origin: OriginFor<T>,
-			collection: T::CollectionId,
-			item: T::ItemId,
-			new_owner: T::AccountId,
-		) -> DispatchResult {
-			let who = ensure_signed(origin)?;
-
-			// Ensure the NFTAA exists
-			ensure!(
-				NftAccounts::<T, I>::contains_key((collection, item)),
-				Error::<T, I>::NFTAANotFound
-			);
-
-			// Verify ownership using the parent pallet
-			ensure!(
-				pallet_nfts::Pallet::<T, I>::owner(collection, item)
-					.map_or(false, |owner| owner == who),
-				Error::<T, I>::NotNFTOwner
-			);
-
-			// Transfer the underlying NFT using the parent pallet
-			pallet_nfts::Pallet::<T, I>::do_transfer(
-				collection,
-				item,
-				new_owner.clone(),
-				|_, _| Ok(()),
-			)?;
-
-			// Update NFTAA ownership
-			NftAccounts::<T, I>::insert((collection, item), new_owner.clone());
-
-			// Emit event
-			Self::deposit_event(Event::NFTAATransferred {
-				collection,
-				item,
-				from: who,
-				to: new_owner,
-			});
 
 			Ok(())
 		}
@@ -266,7 +256,7 @@ pub mod pallet {
 		#[pallet::weight({
         let dispatch_info = call.get_dispatch_info();
         (
-            dispatch_info.call_weight.saturating_add(Weight::from_parts(10_000, 0)),
+            dispatch_info.call_weight.saturating_add(T::NftaaWeightInfo::proxy_call()),
             dispatch_info.class,
             dispatch_info.pays_fee
         )
@@ -276,31 +266,8 @@ pub mod pallet {
 			collection: T::CollectionId,
 			item: T::ItemId,
 			call: Box<<T as Config<I>>::RuntimeCall>,
-		) -> DispatchResult {
+		) -> DispatchResultWithPostInfo {
 			Self::_proxy_call(origin, collection, item, call)
-		}
-		/// Create a new NFTAA from an existing NFT
-		#[pallet::call_index(33)] // TODO: Choose an appropriate index
-		#[pallet::weight(T::NftaaWeightInfo::create_nftaa())]
-		pub fn create_nftaa(
-			origin: OriginFor<T>,
-			collection: T::CollectionId,
-			item: T::ItemId,
-		) -> DispatchResult {
-			Self::_create_nftaa(origin, collection, item)
-		}
-
-		/// Transfer an NFTAA to a new owner
-		#[pallet::call_index(34)] // TODO: Choose an appropriate index
-		#[pallet::weight(T::NftaaWeightInfo::transfer_nftaa())]
-		pub fn transfer_nftaa(
-			origin: OriginFor<T>,
-			collection: T::CollectionId,
-			item: T::ItemId,
-			new_owner: AccountIdLookupOf<T>,
-		) -> DispatchResult {
-			let new_owner = T::Lookup::lookup(new_owner)?;
-			Self::_transfer_nftaa(origin, collection, item, new_owner)
 		}
 		/// Issue a new collection of non-fungible items from a public origin.
 		///
@@ -371,7 +338,7 @@ pub mod pallet {
 		///
 		/// Weight: `O(1)`
 		#[pallet::call_index(3)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::weight(T::NftaaWeightInfo::mint())]
 		pub fn mint(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -379,7 +346,7 @@ pub mod pallet {
 			mint_to: AccountIdLookupOf<T>,
 			witness_data: Option<MintWitness<T::ItemId, DepositBalanceOf<T, I>>>,
 		) -> DispatchResult {
-			pallet_nfts::Pallet::<T, I>::mint(origin, collection, item, mint_to, witness_data)
+			Self::_nftaa_mint(origin, collection, item, mint_to, witness_data)
 		}
 
 		/// Destroy a single item.

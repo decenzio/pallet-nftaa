@@ -1,45 +1,137 @@
-use crate::{mock::*, types::CollectionConfigFor};
-use frame_support::assert_ok;
-use pallet_nfts::{CollectionConfig, CollectionSettings, MintSettings};
-use sp_runtime::AccountId32 as AccountId;
-
-type AccountIdOf<Test> = <Test as frame_system::Config>::AccountId;
-
-pub const ALICE: AccountId = AccountId::new([0u8; 32]);
-
-fn account(id: u8) -> AccountIdOf<Test> {
-    [id; 32].into()
-}
-
-fn collection_config_with_all_settings_enabled() -> CollectionConfigFor<Test> {
-    CollectionConfig {
-        settings: CollectionSettings::all_enabled(),
-        max_supply: None,
-        mint_settings: MintSettings::default(),
-    }
-}
-
-// fn collections() -> Vec<(AccountIdOf<Test>, u32)> {
-//     let mut r: Vec<_> = CollectionAccount::<Test>::iter()
-//         .map(|x| (x.0, x.1))
-//         .collect();
-//     r.sort();
-//     let mut s: Vec<_> = Collection::<Test>::iter()
-//         .map(|x| (x.1.owner, x.0)) // Can't get owner from CollectionAccount as it's private
-//         .collect();
-//     s.sort();
-//     assert_eq!(r, s);
-//     r
-// }
+use crate::{mock::*, Error, Event};
+use frame_support::{assert_noop, assert_ok};
 
 #[test]
-fn it_creates_collection() {
-    new_test_ext().execute_with(|| {
-        // Dispatch a signed extrinsic.
-        assert_ok!(NFTAA::create(
-            RuntimeOrigin::signed(ALICE),
-            ALICE,
-            collection_config_with_all_settings_enabled()
-        ));
-    });
+fn create_nftaa_works() {
+	new_test_ext().execute_with(|| {
+		// Create a collection first
+		assert_ok!(NFTAA::create(
+			RuntimeOrigin::signed(account(1)),
+			account(1),
+			default_collection_config()
+		));
+		// Mint an NFT
+		assert_ok!(NFTAA::mint(RuntimeOrigin::signed(account(1)), 0, 0, account(1), None));
+
+		// Verify NFTAA was created
+		assert!(NFTAA::nft_accounts((0, 0)).is_some());
+
+		// Event should be emitted
+		System::assert_has_event(
+			Event::NFTAACreated {
+				collection: 0,
+				item: 0,
+				nft_account: NFTAA::nft_accounts((0, 0)).unwrap()
+			}
+			.into(),
+		);
+	});
+}
+
+#[test]
+fn create_nftaa_fails_if_not_owner() {
+	new_test_ext().execute_with(|| {
+		// Create collection and mint NFT
+		assert_ok!(NFTAA::create(
+			RuntimeOrigin::signed(account(1)),
+			account(1),
+			default_collection_config()
+		));
+
+		// Should fail when non-owner tries to create NFTAA
+		assert_noop!(NFTAA::mint(RuntimeOrigin::signed(account(2)), 0, 0, account(1), None),
+			pallet_nfts::Error::<Test>::NoPermission
+		);
+	});
+}
+
+#[test]
+fn create_nftaa_fails_if_already_exists() {
+	new_test_ext().execute_with(|| {
+		// Setup
+		assert_ok!(NFTAA::create(
+			RuntimeOrigin::signed(account(1)),
+			account(1),
+			default_collection_config()
+		));
+		assert_ok!(NFTAA::mint(RuntimeOrigin::signed(account(1)), 0, 0, account(1), None));
+
+		// Should fail on second attempt
+		assert_noop!(
+			NFTAA::mint(RuntimeOrigin::signed(account(1)), 0, 0, account(1), None),
+			Error::<Test>::NFTAAAlreadyExists
+		);
+	});
+}
+
+
+#[test]
+fn proxy_call_works() {
+	new_test_ext().execute_with(|| {
+		// Setup
+		assert_ok!(NFTAA::create(
+			RuntimeOrigin::signed(account(1)),
+			account(1),
+			default_collection_config()
+		));
+		assert_ok!(NFTAA::mint(RuntimeOrigin::signed(account(1)), 0, 0, account(1), None));
+
+		// Create a test call (e.g., system remark)
+		let call =
+			Box::new(RuntimeCall::System(frame_system::Call::remark { remark: vec![1, 2, 3] }));
+
+		// Execute proxy call
+		assert_ok!(NFTAA::proxy_call(RuntimeOrigin::signed(account(1)), 0, 0, call));
+
+		// Event should be emitted
+		System::assert_has_event(
+			Event::ProxyExecuted { collection: 0, item: 0, result: Ok(()) }.into(),
+		);
+	});
+}
+
+#[test]
+fn proxy_call_fails_if_nftaa_listed() {
+	new_test_ext().execute_with(|| {
+		// Setup
+		assert_ok!(NFTAA::create(
+			RuntimeOrigin::signed(account(1)),
+			account(1),
+			default_collection_config()
+		));
+		assert_ok!(NFTAA::mint(RuntimeOrigin::signed(account(1)), 0, 0, account(1), None));
+
+		// List the NFT for sale
+		assert_ok!(NFTAA::set_price(RuntimeOrigin::signed(account(1)), 0, 0, Some(1000), None));
+
+		// Try to execute proxy call
+		let call =
+			Box::new(RuntimeCall::System(frame_system::Call::remark { remark: vec![1, 2, 3] }));
+
+		assert_noop!(
+			NFTAA::proxy_call(RuntimeOrigin::signed(account(1)), 0, 0, call),
+			Error::<Test>::NFTAAListed
+		);
+	});
+}
+
+#[test]
+fn proxy_call_fails_if_not_nftaa_owner() {
+	new_test_ext().execute_with(|| {
+		// Setup
+		assert_ok!(NFTAA::create(
+			RuntimeOrigin::signed(account(1)),
+			account(1),
+			default_collection_config()
+		));
+		assert_ok!(NFTAA::mint(RuntimeOrigin::signed(account(1)), 0, 0, account(1), None));
+
+		let call =
+			Box::new(RuntimeCall::System(frame_system::Call::remark { remark: vec![1, 2, 3] }));
+
+		assert_noop!(
+			NFTAA::proxy_call(RuntimeOrigin::signed(account(2)), 0, 0, call),
+			Error::<Test>::NotNFTAAOwner
+		);
+	});
 }

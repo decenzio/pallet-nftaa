@@ -14,76 +14,31 @@ benchmarks_instance_pallet! {
 		frame_system::Call<T>: Into<<T as Config<I>>::RuntimeCall>
 	}
 
-	create_nftaa {
-		let caller: T::AccountId = whitelisted_caller();
+	mint {
+        let caller: T::AccountId = whitelisted_caller();
 
-		let collection = T::Helper::collection(0);
-		let item = T::Helper::item(0);
+        let collection = T::Helper::collection(0);
+        let item = T::Helper::item(0);
 
-		let collection_config = CollectionConfig {
-			settings: CollectionSettings::default(),
-			max_supply: None,
-			mint_settings: Default::default(),
-		};
+        // Create collection with basic settings
+        let collection_config = CollectionConfig {
+            settings: CollectionSettings::default(),  // Just use default settings
+            max_supply: None,
+            mint_settings: Default::default(),
+        };
 
-		assert_ok!(pallet_nfts::Pallet::<T, I>::create(
-			RawOrigin::Signed(caller.clone()).into(),
-			T::Lookup::unlookup(caller.clone()),
-			collection_config
-		));
+        // Create the collection first
+        assert_ok!(Pallet::<T, I>::create(
+            RawOrigin::Signed(caller.clone()).into(),
+            T::Lookup::unlookup(caller.clone()),
+            collection_config
+        ));
 
-		assert_ok!(pallet_nfts::Pallet::<T, I>::mint(
-			RawOrigin::Signed(caller.clone()).into(),
-			collection,
-			item,
-			T::Lookup::unlookup(caller.clone()),
-			None
-		));
-	}: _(RawOrigin::Signed(caller.clone()), collection, item)
-	verify {
-		assert!(NftAccounts::<T, I>::contains_key((collection, item)));
-	}
-
-	transfer_nftaa {
-		let caller: T::AccountId = whitelisted_caller();
-		let recipient: T::AccountId = account("recipient", 0, 0);
-
-		let collection = T::Helper::collection(0);
-		let item = T::Helper::item(0);
-
-		let collection_config = CollectionConfig {
-			settings: CollectionSettings::default(),
-			max_supply: None,
-			mint_settings: Default::default(),
-		};
-
-		assert_ok!(pallet_nfts::Pallet::<T, I>::create(
-			RawOrigin::Signed(caller.clone()).into(),
-			T::Lookup::unlookup(caller.clone()),
-			collection_config
-		));
-
-		assert_ok!(pallet_nfts::Pallet::<T, I>::mint(
-			RawOrigin::Signed(caller.clone()).into(),
-			collection,
-			item,
-			T::Lookup::unlookup(caller.clone()),
-			None
-		));
-
-		assert_ok!(Pallet::<T, I>::create_nftaa(
-			RawOrigin::Signed(caller.clone()).into(),
-			collection,
-			item
-		));
-	}: _(RawOrigin::Signed(caller), collection, item, T::Lookup::unlookup(recipient.clone()))
-	verify {
-		assert_eq!(
-			pallet_nfts::Pallet::<T, I>::owner(collection, item),
-			Some(recipient)
-		);
-	}
-
+    }: _(RawOrigin::Signed(caller.clone()), collection, item, T::Lookup::unlookup(caller.clone()), None)
+    verify {
+        assert!(NftAccounts::<T, I>::contains_key((collection, item)));
+    }
+	
 	proxy_call {
 		let caller: T::AccountId = whitelisted_caller();
 		let collection = T::Helper::collection(0);
@@ -95,24 +50,18 @@ benchmarks_instance_pallet! {
 			mint_settings: Default::default(),
 		};
 
-		assert_ok!(pallet_nfts::Pallet::<T, I>::create(
+		assert_ok!(Pallet::<T, I>::create(
 			RawOrigin::Signed(caller.clone()).into(),
 			T::Lookup::unlookup(caller.clone()),
 			collection_config
 		));
 
-		assert_ok!(pallet_nfts::Pallet::<T, I>::mint(
+		assert_ok!(Pallet::<T, I>::mint(
 			RawOrigin::Signed(caller.clone()).into(),
 			collection,
 			item,
 			T::Lookup::unlookup(caller.clone()),
 			None
-		));
-
-		assert_ok!(Pallet::<T, I>::create_nftaa(
-			RawOrigin::Signed(caller.clone()).into(),
-			collection,
-			item
 		));
 
 		// Create a dummy call to use in the proxy
