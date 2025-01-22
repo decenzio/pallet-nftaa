@@ -68,4 +68,4 @@ The NFTAA pallet inherits all functionality from the base NFTs pallet, including
 * [`System`](https://docs.rs/frame-system/latest/frame_system/)
 * [`Support`](https://docs.rs/frame-support/latest/frame_support/)
 
-License: Apache-2.0
+License: MIT
