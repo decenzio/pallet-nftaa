@@ -4,7 +4,7 @@ A pallet for converting NFTs into smart accounts that can execute transactions. 
 
 ## Overview
 
-The NFTAs pallet extends the NFTs pallet functionality by allowing NFTs to act as accounts, enabling:
+The NFTAAs pallet extends the NFTs pallet functionality by allowing NFTs to act as accounts, enabling:
 
 * NFT to account conversion
 * Account-based transaction execution
@@ -58,7 +58,7 @@ The NFTAA pallet inherits all functionality from the base NFTs pallet, including
 ### Implementation Details
 
 * NFTAAs cannot execute transactions while listed for sale
-* Account addresses are generated deterministically based on collection and item IDs
+* Account addresses are generated deterministically based on collection item IDs and parachain ID
 * Proxy calls can only be executed by the current owner of the NFTAA
 * All standard NFT features remain available for NFTAAs
 
