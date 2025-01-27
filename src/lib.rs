@@ -5,13 +5,11 @@ pub use pallet::*;
 extern crate alloc;
 
 use alloc::{boxed::Box, vec::Vec};
-use frame_system::Config as SystemConfig;
-use sp_runtime::traits::{Hash, StaticLookup};
+use frame_support::dispatch::PostDispatchInfo;
 use frame_support::weights::Weight;
+use frame_system::Config as SystemConfig;
 use sp_runtime::traits::Dispatchable;
-use frame_support::{
-	dispatch::PostDispatchInfo
-};
+use sp_runtime::traits::{Hash, StaticLookup};
 
 #[cfg(test)]
 mod mock;
@@ -35,21 +33,20 @@ pub trait WeightInfo {
 	fn proxy_call() -> Weight;
 }
 
-
 impl WeightInfo for () {
 	fn mint() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `314`
 		//  Estimated: `3623`
 		// Minimum execution time: 13_000_000 picoseconds.
-		Weight::from_parts(14_000_000,0)
+		Weight::from_parts(14_000_000, 0)
 	}
 	fn proxy_call() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `395`
 		//  Estimated: `3623`
 		// Minimum execution time: 19_000_000 picoseconds.
-		Weight::from_parts(20_000,0)
+		Weight::from_parts(20_000, 0)
 	}
 }
 
@@ -57,7 +54,9 @@ impl WeightInfo for () {
 pub mod pallet {
 	use super::*;
 	use frame_support::{
-		dispatch::{GetDispatchInfo, extract_actual_weight}, pallet_prelude::*, traits::{nonfungibles_v2::Trading, OriginTrait},
+		dispatch::{extract_actual_weight, GetDispatchInfo},
+		pallet_prelude::*,
+		traits::{nonfungibles_v2::Trading, OriginTrait},
 	};
 	use frame_system::pallet_prelude::*;
 	use pallet_nfts::{
@@ -66,7 +65,6 @@ pub mod pallet {
 	};
 
 	use pallet_utility::WeightInfo as UtilityWeightInfo;
-
 
 	#[pallet::config]
 	pub trait Config<I: 'static = ()>:
@@ -136,7 +134,6 @@ pub mod pallet {
 			pallet_nfts::Pallet::<T, I>::item_price(&collection, &item).is_some()
 		}
 
-
 		/// Generate a deterministic address for an NFT
 		fn generate_nfta_address(collection: T::CollectionId, item: T::ItemId) -> T::AccountId {
 			// Encode the chain ID, collection ID, and item ID
@@ -175,8 +172,9 @@ pub mod pallet {
 			ensure!(!Self::is_nft_listed(collection, item), Error::<T, I>::NFTAAListed);
 
 			// Get the NFTAA address
-			let nft_account = NftAccounts::<T, I>::get((collection, item)).expect("We already checked that the NFTAA exists; qed");
-			
+			let nft_account = NftAccounts::<T, I>::get((collection, item))
+				.expect("We already checked that the NFTAA exists; qed");
+
 			// Reconstruct logic from pallet_utility::Pallet::as_derivative
 
 			// Change origin to the NFTAA account
@@ -191,7 +189,6 @@ pub mod pallet {
 			// Add the real weight of the dispatch.
 			weight = weight.saturating_add(extract_actual_weight(&result, &info));
 
-
 			// Emit event with the result
 			Self::deposit_event(Event::ProxyExecuted {
 				collection,
@@ -205,7 +202,6 @@ pub mod pallet {
 					err
 				})
 				.map(|_| Some(weight).into())
-
 		}
 
 		// Mint an NFTAA
@@ -214,17 +210,35 @@ pub mod pallet {
 			collection: T::CollectionId,
 			item: T::ItemId,
 			mint_to: AccountIdLookupOf<T>,
-			witness_data: Option<MintWitness<T::ItemId, DepositBalanceOf<T, I>>>
-		) -> DispatchResult{
+			witness_data: Option<MintWitness<T::ItemId, DepositBalanceOf<T, I>>>,
+		) -> DispatchResult {
 			let _who = ensure_signed(origin.clone())?;
 			// Check if the NFTAA already exists
 			ensure!(
 				!NftAccounts::<T, I>::contains_key((collection, item)),
 				Error::<T, I>::NFTAAAlreadyExists
 			);
-			
+
 			let nft_account = Self::generate_nfta_address(collection, item);
-			pallet_nfts::Pallet::<T, I>::mint(origin.clone(), collection, item, mint_to, witness_data)?;
+			pallet_nfts::Pallet::<T, I>::mint(
+				origin.clone(),
+				collection,
+				item,
+				mint_to,
+				witness_data,
+			)?;
+
+			let key = pallet_nfts::Pallet::<T, I>::construct_attribute_key(b"nftaa_address".to_vec())?;
+			let value = pallet_nfts::Pallet::<T, I>::construct_attribute_value(nft_account.encode())?;
+
+			pallet_nfts::Pallet::<T, I>::set_attribute(
+				origin.clone(),
+				collection,
+				Some(item),
+				AttributeNamespace::CollectionOwner,
+				key,
+				value,
+			)?;
 
 			// Store the NFTAA
 			NftAccounts::<T, I>::insert((collection, item), nft_account.clone());
