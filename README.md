@@ -1,15 +1,15 @@
 # NFTAs (NFT-as-Account) pallet
 
-A pallet for converting NFTs into smart accounts that can execute transactions.
+A pallet for converting NFTs into smart accounts that can execute transactions. Alternatively, they can change their owner by simply selling a strict NFT token.
 
 ## Overview
 
-The NFTAs pallet extends the NFTs pallet functionality by allowing NFTs to act as accounts, enabling:
+The NFTAAs pallet extends the NFTs pallet functionality by allowing NFTs to act as accounts, enabling:
 
-* NFT to Account Conversion
-* Account-based Transaction Execution
-* Integration with Existing NFT Features
-* Account-based Permission Management
+* NFT to account conversion
+* Account-based transaction execution
+* Integration with existing NFT features
+* Account-based permission management
 
 To use it in your runtime, you need to implement the [`nfts::Config`](https://github.com/decenzio/polkadot-sdk/blob/d9f211f99cc6e2e899bf8286b43d6f146e396a6a/templates/parachain/runtime/src/configs/mod.rs#L382) trait. You also need to configure `pallet-nfts` and `pallet-utility` as those are required.
 
@@ -58,7 +58,7 @@ The NFTAA pallet inherits all functionality from the base NFTs pallet, including
 ### Implementation Details
 
 * NFTAAs cannot execute transactions while listed for sale
-* Account addresses are generated deterministically based on collection and item IDs
+* Account addresses are generated deterministically based on collection item IDs and parachain ID
 * Proxy calls can only be executed by the current owner of the NFTAA
 * All standard NFT features remain available for NFTAAs
 
