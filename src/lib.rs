@@ -60,8 +60,10 @@ pub mod pallet {
 	};
 	use frame_system::pallet_prelude::*;
 	use pallet_nfts::{
-		AttributeNamespace, BalanceOf, BlockNumberFor, CollectionConfigFor, CollectionSettings,
-		DepositBalanceOf, DestroyWitness, ItemPrice, MintSettings, MintWitness,
+		AttributeNamespace, BalanceOf, BlockNumberFor, CancelAttributesApprovalWitness,
+		CollectionConfigFor, CollectionSettings, DepositBalanceOf, DestroyWitness, ItemConfig,
+		ItemPrice, ItemTipOf, MintSettings, MintWitness, PreSignedMintOf, PriceWithDirection,
+		WeightInfo as NftsWeightInfo,
 	};
 
 	use pallet_utility::WeightInfo as UtilityWeightInfo;
@@ -89,6 +91,7 @@ pub mod pallet {
 			+ From<pallet_utility::Call<Self>>;
 		/// A type representing the weights required by the dispatchables of this pallet.
 		type NftaaWeightInfo: WeightInfo;
+		type NftsWeightInfo: pallet_nfts::WeightInfo;
 	}
 
 	#[pallet::pallet]
@@ -228,8 +231,10 @@ pub mod pallet {
 				witness_data,
 			)?;
 
-			let key = pallet_nfts::Pallet::<T, I>::construct_attribute_key(b"nftaa_address".to_vec())?;
-			let value = pallet_nfts::Pallet::<T, I>::construct_attribute_value(nft_account.encode())?;
+			let key =
+				pallet_nfts::Pallet::<T, I>::construct_attribute_key(b"nftaa_address".to_vec())?;
+			let value =
+				pallet_nfts::Pallet::<T, I>::construct_attribute_value(nft_account.encode())?;
 
 			pallet_nfts::Pallet::<T, I>::set_attribute(
 				origin.clone(),
@@ -266,7 +271,7 @@ pub mod pallet {
 		/// - `collection`: The collection ID of the NFTAA
 		/// - `item`: The item ID of the NFTAA
 		/// - `call`: The call to be executed
-		#[pallet::call_index(35)]
+		#[pallet::call_index(0)]
 		#[pallet::weight({
         let dispatch_info = call.get_dispatch_info();
         (
@@ -283,6 +288,35 @@ pub mod pallet {
 		) -> DispatchResultWithPostInfo {
 			Self::_proxy_call(origin, collection, item, call)
 		}
+
+		/// Mint an item of a particular collection.
+		///
+		/// The origin must be Signed and the sender must comply with the `mint_settings` rules.
+		///
+		/// - `collection`: The collection of the item to be minted.
+		/// - `item`: An identifier of the new item.
+		/// - `mint_to`: Account into which the item will be minted.
+		/// - `witness_data`: When the mint type is `HolderOf(collection_id)`, then the owned
+		///   item_id from that collection needs to be provided within the witness data object. If
+		///   the mint price is set, then it should be additionally confirmed in the `witness_data`.
+		///
+		/// Note: the deposit will be taken from the `origin` and not the `owner` of the `item`.
+		///
+		/// Emits `Issued` event when successful.
+		///
+		/// Weight: `O(1)`
+		#[pallet::call_index(1)]
+		#[pallet::weight(T::NftaaWeightInfo::mint())]
+		pub fn mint(
+			origin: OriginFor<T>,
+			collection: T::CollectionId,
+			item: T::ItemId,
+			mint_to: AccountIdLookupOf<T>,
+			witness_data: Option<MintWitness<T::ItemId, DepositBalanceOf<T, I>>>,
+		) -> DispatchResult {
+			Self::_nftaa_mint(origin, collection, item, mint_to, witness_data)
+		}
+
 		/// Issue a new collection of non-fungible items from a public origin.
 		///
 		/// This new collection has no items initially and its owner is the origin.
@@ -298,7 +332,7 @@ pub mod pallet {
 		/// Emits `Created` event when successful.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(0)]
+		#[pallet::call_index(2)]
 		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
 		pub fn create(
 			origin: OriginFor<T>,
@@ -325,42 +359,18 @@ pub mod pallet {
 		/// - `m = witness.item_metadatas`
 		/// - `c = witness.item_configs`
 		/// - `a = witness.attributes`
-		#[pallet::call_index(2)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(3)]
+		#[pallet::weight(T::NftsWeightInfo::destroy(
+			witness.item_metadatas,
+			witness.item_configs,
+			witness.attributes,
+		))]
 		pub fn destroy(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
 			witness: DestroyWitness,
 		) -> DispatchResultWithPostInfo {
 			pallet_nfts::Pallet::<T, I>::destroy(origin, collection, witness)
-		}
-
-		/// Mint an item of a particular collection.
-		///
-		/// The origin must be Signed and the sender must comply with the `mint_settings` rules.
-		///
-		/// - `collection`: The collection of the item to be minted.
-		/// - `item`: An identifier of the new item.
-		/// - `mint_to`: Account into which the item will be minted.
-		/// - `witness_data`: When the mint type is `HolderOf(collection_id)`, then the owned
-		///   item_id from that collection needs to be provided within the witness data object. If
-		///   the mint price is set, then it should be additionally confirmed in the `witness_data`.
-		///
-		/// Note: the deposit will be taken from the `origin` and not the `owner` of the `item`.
-		///
-		/// Emits `Issued` event when successful.
-		///
-		/// Weight: `O(1)`
-		#[pallet::call_index(3)]
-		#[pallet::weight(T::NftaaWeightInfo::mint())]
-		pub fn mint(
-			origin: OriginFor<T>,
-			collection: T::CollectionId,
-			item: T::ItemId,
-			mint_to: AccountIdLookupOf<T>,
-			witness_data: Option<MintWitness<T::ItemId, DepositBalanceOf<T, I>>>,
-		) -> DispatchResult {
-			Self::_nftaa_mint(origin, collection, item, mint_to, witness_data)
 		}
 
 		/// Destroy a single item.
@@ -374,8 +384,8 @@ pub mod pallet {
 		/// Emits `Burned`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(5)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(4)]
+		#[pallet::weight(T::NftsWeightInfo::burn())]
 		pub fn burn(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -398,8 +408,8 @@ pub mod pallet {
 		/// Emits `Transferred`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(6)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(5)]
+		#[pallet::weight(T::NftsWeightInfo::transfer())]
 		pub fn transfer(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -431,8 +441,8 @@ pub mod pallet {
 		/// Emits `AttributeSet`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(19)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(6)]
+		#[pallet::weight(T::NftsWeightInfo::set_attribute())]
 		pub fn set_attribute(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -461,8 +471,8 @@ pub mod pallet {
 		/// Emits `AttributeCleared`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(21)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(7)]
+		#[pallet::weight(T::NftsWeightInfo::clear_attribute())]
 		pub fn clear_attribute(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -484,8 +494,8 @@ pub mod pallet {
 		/// - `bid_price`: The price the sender is willing to pay.
 		///
 		/// Emits `ItemBought` on success.
-		#[pallet::call_index(32)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().reads_writes(1, 1))]
+		#[pallet::call_index(8)]
+		#[pallet::weight(T::NftsWeightInfo::buy_item())]
 		pub fn buy_item(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -507,8 +517,8 @@ pub mod pallet {
 		/// Emits `CollectionMetadataCleared`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(27)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(9)]
+		#[pallet::weight(T::NftsWeightInfo::clear_collection_metadata())]
 		pub fn clear_collection_metadata(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -529,8 +539,8 @@ pub mod pallet {
 		/// Emits `ItemMetadataCleared`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(25)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(10)]
+		#[pallet::weight(T::NftsWeightInfo::clear_metadata())]
 		pub fn clear_metadata(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -551,8 +561,8 @@ pub mod pallet {
 		/// Emits `CollectionLocked`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(10)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(11)]
+		#[pallet::weight(T::NftsWeightInfo::lock_collection())]
 		pub fn lock_collection(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -578,8 +588,8 @@ pub mod pallet {
 		/// Emits `ItemPropertiesLocked`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(18)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(12)]
+		#[pallet::weight(T::NftsWeightInfo::lock_item_properties())]
 		pub fn lock_item_properties(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -606,8 +616,8 @@ pub mod pallet {
 		/// Emits `ItemTransferLocked`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(8)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(13)]
+		#[pallet::weight(T::NftsWeightInfo::lock_item_transfer())]
 		pub fn lock_item_transfer(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -633,8 +643,8 @@ pub mod pallet {
 		/// is not permitted to call it.
 		///
 		/// Weight: `O(items.len())`
-		#[pallet::call_index(7)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().reads_writes(1, 1))]
+		#[pallet::call_index(14)]
+		#[pallet::weight(T::NftsWeightInfo::redeposit(items.len() as u32))]
 		pub fn redeposit(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -652,8 +662,8 @@ pub mod pallet {
 		/// - `max_supply`: The maximum number of items a collection could have.
 		///
 		/// Emits `CollectionMaxSupplySet` event when successful.
-		#[pallet::call_index(29)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(15)]
+		#[pallet::weight(T::NftsWeightInfo::set_collection_max_supply())]
 		pub fn set_collection_max_supply(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -677,8 +687,8 @@ pub mod pallet {
 		/// Emits `CollectionMetadataSet`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(26)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(16)]
+		#[pallet::weight(T::NftsWeightInfo::set_collection_metadata())]
 		pub fn set_collection_metadata(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -703,8 +713,8 @@ pub mod pallet {
 		/// Emits `ItemMetadataSet`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(24)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(17)]
+		#[pallet::weight(T::NftsWeightInfo::set_metadata())]
 		pub fn set_metadata(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -725,8 +735,8 @@ pub mod pallet {
 		///
 		/// Emits `ItemPriceSet` on success if the price is not `None`.
 		/// Emits `ItemPriceRemoved` on success if the price is `None`.
-		#[pallet::call_index(31)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(18)]
+		#[pallet::weight(T::NftsWeightInfo::set_price())]
 		pub fn set_price(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -759,8 +769,8 @@ pub mod pallet {
 		/// Emits `TeamChanged`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(12)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(19)]
+		#[pallet::weight(T::NftsWeightInfo::set_team())]
 		pub fn set_team(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -782,8 +792,8 @@ pub mod pallet {
 		/// Emits `OwnerChanged`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(11)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(20)]
+		#[pallet::weight(T::NftsWeightInfo::transfer_ownership())]
 		pub fn transfer_ownership(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -802,8 +812,8 @@ pub mod pallet {
 		/// Emits `ItemTransferUnlocked`.
 		///
 		/// Weight: `O(1)`
-		#[pallet::call_index(9)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(21)]
+		#[pallet::weight(T::NftsWeightInfo::unlock_item_transfer())]
 		pub fn unlock_item_transfer(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
@@ -821,14 +831,411 @@ pub mod pallet {
 		/// - `mint_settings`: The new mint settings.
 		///
 		/// Emits `CollectionMintSettingsUpdated` event when successful.
-		#[pallet::call_index(30)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		#[pallet::call_index(22)]
+		#[pallet::weight(T::NftsWeightInfo::update_mint_settings())]
 		pub fn update_mint_settings(
 			origin: OriginFor<T>,
 			collection: T::CollectionId,
 			mint_settings: MintSettings<BalanceOf<T, I>, BlockNumberFor<T, I>, T::CollectionId>,
 		) -> DispatchResult {
 			pallet_nfts::Pallet::<T, I>::update_mint_settings(origin, collection, mint_settings)
+		}
+
+		/// Approve item's attributes to be changed by a delegated third-party account.
+		///
+		/// Origin must be Signed and must be an owner of the `item`.
+		///
+		/// - `collection`: A collection of the item.
+		/// - `item`: The item that holds attributes.
+		/// - `delegate`: The account to delegate permission to change attributes of the item.
+		///
+		/// Emits `ItemAttributesApprovalAdded` on success.
+		#[pallet::call_index(23)]
+		#[pallet::weight(T::NftsWeightInfo::approve_item_attributes())]
+		pub fn approve_item_attributes(
+			origin: OriginFor<T>,
+			collection: T::CollectionId,
+			item: T::ItemId,
+			delegate: AccountIdLookupOf<T>,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::approve_item_attributes(origin, collection, item, delegate)
+		}
+
+		/// Approve an item to be transferred by a delegated third-party account.
+		///
+		/// Origin must be either `ForceOrigin` or Signed and the sender should be the Owner of the
+		/// `item`.
+		///
+		/// - `collection`: The collection of the item to be approved for delegated transfer.
+		/// - `item`: The item to be approved for delegated transfer.
+		/// - `delegate`: The account to delegate permission to transfer the item.
+		/// - `maybe_deadline`: Optional deadline for the approval. Specified by providing the
+		/// 	number of blocks after which the approval will expire
+		///
+		/// Emits `TransferApproved` on success.
+		///
+		/// Weight: `O(1)`
+		#[pallet::call_index(24)]
+		#[pallet::weight(T::NftsWeightInfo::approve_transfer())]
+		pub fn approve_transfer(
+			origin: OriginFor<T>,
+			collection: T::CollectionId,
+			item: T::ItemId,
+			delegate: AccountIdLookupOf<T>,
+			maybe_deadline: Option<BlockNumberFor<T, I>>,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::approve_transfer(
+				origin,
+				collection,
+				item,
+				delegate,
+				maybe_deadline,
+			)
+		}
+
+		/// Cancel one of the transfer approvals for a specific item.
+		///
+		/// Origin must be either:
+		/// - the `Force` origin;
+		/// - `Signed` with the signer being the Owner of the `item`;
+		///
+		/// Arguments:
+		/// - `collection`: The collection of the item of whose approval will be cancelled.
+		/// - `item`: The item of the collection of whose approval will be cancelled.
+		/// - `delegate`: The account that is going to loose their approval.
+		///
+		/// Emits `ApprovalCancelled` on success.
+		///
+		/// Weight: `O(1)`
+		#[pallet::call_index(25)]
+		#[pallet::weight(T::NftsWeightInfo::cancel_approval())]
+		pub fn cancel_approval(
+			origin: OriginFor<T>,
+			collection: T::CollectionId,
+			item: T::ItemId,
+			delegate: AccountIdLookupOf<T>,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::cancel_approval(origin, collection, item, delegate)
+		}
+
+		/// Cancel the previously provided approval to change item's attributes.
+		/// All the previously set attributes by the `delegate` will be removed.
+		///
+		/// Origin must be Signed and must be an owner of the `item`.
+		///
+		/// - `collection`: Collection that the item is contained within.
+		/// - `item`: The item that holds attributes.
+		/// - `delegate`: The previously approved account to remove.
+		///
+		/// Emits `ItemAttributesApprovalRemoved` on success.
+		#[pallet::call_index(26)]
+		#[pallet::weight(T::NftsWeightInfo::cancel_item_attributes_approval(
+			witness.account_attributes
+		))]
+		pub fn cancel_item_attributes_approval(
+			origin: OriginFor<T>,
+			collection: T::CollectionId,
+			item: T::ItemId,
+			delegate: AccountIdLookupOf<T>,
+			witness: CancelAttributesApprovalWitness,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::cancel_item_attributes_approval(
+				origin, collection, item, delegate, witness,
+			)
+		}
+
+		/// Cancel an atomic swap.
+		///
+		/// Origin must be Signed.
+		/// Origin must be an owner of the `item` if the deadline hasn't expired.
+		///
+		/// - `collection`: The collection of the item.
+		/// - `item`: The item an owner wants to give.
+		///
+		/// Emits `SwapCancelled` on success.
+		#[pallet::call_index(27)]
+		#[pallet::weight(T::NftsWeightInfo::cancel_swap())]
+		pub fn cancel_swap(
+			origin: OriginFor<T>,
+			offered_collection: T::CollectionId,
+			offered_item: T::ItemId,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::cancel_swap(origin, offered_collection, offered_item)
+		}
+
+		/// Claim an atomic swap.
+		/// This method executes a pending swap, that was created by a counterpart before.
+		///
+		/// Origin must be Signed and must be an owner of the `item`.
+		///
+		/// - `send_collection`: The collection of the item to be sent.
+		/// - `send_item`: The item to be sent.
+		/// - `receive_collection`: The collection of the item to be received.
+		/// - `receive_item`: The item to be received.
+		/// - `witness_price`: A price that was previously agreed on.
+		///
+		/// Emits `SwapClaimed` on success.
+		#[pallet::call_index(28)]
+		#[pallet::weight(T::NftsWeightInfo::claim_swap())]
+		pub fn claim_swap(
+			origin: OriginFor<T>,
+			send_collection: T::CollectionId,
+			send_item: T::ItemId,
+			receive_collection: T::CollectionId,
+			receive_item: T::ItemId,
+			witness_price: Option<PriceWithDirection<ItemPrice<T, I>>>,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::claim_swap(
+				origin,
+				send_collection,
+				send_item,
+				receive_collection,
+				receive_item,
+				witness_price,
+			)
+		}
+
+		/// Cancel all the approvals of a specific item.
+		///
+		/// Origin must be either:
+		/// - the `Force` origin;
+		/// - `Signed` with the signer being the Owner of the `item`;
+		///
+		/// Arguments:
+		/// - `collection`: The collection of the item of whose approvals will be cleared.
+		/// - `item`: The item of the collection of whose approvals will be cleared.
+		///
+		/// Emits `AllApprovalsCancelled` on success.
+		///
+		/// Weight: `O(1)`
+		#[pallet::call_index(29)]
+		#[pallet::weight(T::NftsWeightInfo::clear_all_transfer_approvals())]
+		pub fn clear_all_transfer_approvals(
+			origin: OriginFor<T>,
+			collection: T::CollectionId,
+			item: T::ItemId,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::clear_all_transfer_approvals(origin, collection, item)
+		}
+
+		/// Register a new atomic swap, declaring an intention to send an `item` in exchange for
+		/// `desired_item` from origin to target on the current blockchain.
+		/// The target can execute the swap during the specified `duration` of blocks (if set).
+		/// Additionally, the price could be set for the desired `item`.
+		///
+		/// Origin must be Signed and must be an owner of the `item`.
+		///
+		/// - `collection`: The collection of the item.
+		/// - `item`: The item an owner wants to give.
+		/// - `desired_collection`: The collection of the desired item.
+		/// - `desired_item`: The desired item an owner wants to receive.
+		/// - `maybe_price`: The price an owner is willing to pay or receive for the desired `item`.
+		/// - `duration`: A deadline for the swap. Specified by providing the number of blocks
+		/// 	after which the swap will expire.
+		///
+		/// Emits `SwapCreated` on success.
+		#[pallet::call_index(30)]
+		#[pallet::weight(T::NftsWeightInfo::create_swap())]
+		pub fn create_swap(
+			origin: OriginFor<T>,
+			offered_collection: T::CollectionId,
+			offered_item: T::ItemId,
+			desired_collection: T::CollectionId,
+			maybe_desired_item: Option<T::ItemId>,
+			maybe_price: Option<PriceWithDirection<ItemPrice<T, I>>>,
+			duration: BlockNumberFor<T, I>,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::create_swap(
+				origin,
+				offered_collection,
+				offered_item,
+				desired_collection,
+				maybe_desired_item,
+				maybe_price,
+				duration,
+			)
+		}
+
+		/// Change the config of a collection.
+		///
+		/// Origin must be `ForceOrigin`.
+		///
+		/// - `collection`: The identifier of the collection.
+		/// - `config`: The new config of this collection.
+		///
+		/// Emits `CollectionConfigChanged`.
+		///
+		/// Weight: `O(1)`
+		#[pallet::call_index(31)]
+		#[pallet::weight(T::NftsWeightInfo::force_collection_config())]
+		pub fn force_collection_config(
+			origin: OriginFor<T>,
+			collection: T::CollectionId,
+			config: CollectionConfigFor<T, I>,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::force_collection_config(origin, collection, config)
+		}
+
+		/// Change the Owner of a collection.
+		///
+		/// Origin must be `ForceOrigin`.
+		///
+		/// - `collection`: The identifier of the collection.
+		/// - `owner`: The new Owner of this collection.
+		///
+		/// Emits `OwnerChanged`.
+		///
+		/// Weight: `O(1)`
+		#[pallet::call_index(32)]
+		#[pallet::weight(T::NftsWeightInfo::force_collection_owner())]
+		pub fn force_collection_owner(
+			origin: OriginFor<T>,
+			collection: T::CollectionId,
+			owner: AccountIdLookupOf<T>,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::force_collection_owner(origin, collection, owner)
+		}
+
+		/// Issue a new collection of non-fungible items from a privileged origin.
+		///
+		/// This new collection has no items initially.
+		///
+		/// The origin must conform to `ForceOrigin`.
+		///
+		/// Unlike `create`, no funds are reserved.
+		///
+		/// - `owner`: The owner of this collection of items. The owner has full superuser
+		///   permissions over this item, but may later change and configure the permissions using
+		///   `transfer_ownership` and `set_team`.
+		///
+		/// Emits `ForceCreated` event when successful.
+		///
+		/// Weight: `O(1)`
+		#[pallet::call_index(33)]
+		#[pallet::weight(T::NftsWeightInfo::force_create())]
+		pub fn force_create(
+			origin: OriginFor<T>,
+			owner: AccountIdLookupOf<T>,
+			config: CollectionConfigFor<T, I>,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::force_create(origin, owner, config)
+		}
+
+		/// Mint an item of a particular collection from a privileged origin.
+		///
+		/// The origin must conform to `ForceOrigin` or must be `Signed` and the sender must be the
+		/// Issuer of the `collection`.
+		///
+		/// - `collection`: The collection of the item to be minted.
+		/// - `item`: An identifier of the new item.
+		/// - `mint_to`: Account into which the item will be minted.
+		/// - `item_config`: A config of the new item.
+		///
+		/// Emits `Issued` event when successful.
+		///
+		/// Weight: `O(1)`
+		#[pallet::call_index(34)]
+		#[pallet::weight(T::NftsWeightInfo::force_mint())]
+		pub fn force_mint(
+			origin: OriginFor<T>,
+			collection: T::CollectionId,
+			item: T::ItemId,
+			mint_to: AccountIdLookupOf<T>,
+			item_config: ItemConfig,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::force_mint(origin, collection, item, mint_to, item_config)
+		}
+
+		/// Force-set an attribute for a collection or item.
+		///
+		/// Origin must be `ForceOrigin`.
+		///
+		/// If the attribute already exists and it was set by another account, the deposit
+		/// will be returned to the previous owner.
+		///
+		/// - `set_as`: An optional owner of the attribute.
+		/// - `collection`: The identifier of the collection whose item's metadata to set.
+		/// - `maybe_item`: The identifier of the item whose metadata to set.
+		/// - `namespace`: Attribute's namespace.
+		/// - `key`: The key of the attribute.
+		/// - `value`: The value to which to set the attribute.
+		///
+		/// Emits `AttributeSet`.
+		///
+		/// Weight: `O(1)`
+		#[pallet::call_index(35)]
+		#[pallet::weight(T::NftsWeightInfo::force_set_attribute())]
+		pub fn force_set_attribute(
+			origin: OriginFor<T>,
+			set_as: Option<T::AccountId>,
+			collection: T::CollectionId,
+			maybe_item: Option<T::ItemId>,
+			namespace: AttributeNamespace<T::AccountId>,
+			key: BoundedVec<u8, T::KeyLimit>,
+			value: BoundedVec<u8, T::ValueLimit>,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::force_set_attribute(
+				origin, set_as, collection, maybe_item, namespace, key, value,
+			)
+		}
+
+		/// Mint an item by providing the pre-signed approval.
+		///
+		/// Origin must be Signed.
+		///
+		/// - `mint_data`: The pre-signed approval that consists of the information about the item,
+		///   its metadata, attributes, who can mint it (`None` for anyone) and until what block
+		///   number.
+		/// - `signature`: The signature of the `data` object.
+		/// - `signer`: The `data` object's signer. Should be an Issuer of the collection.
+		///
+		/// Emits `Issued` on success.
+		/// Emits `AttributeSet` if the attributes were provided.
+		/// Emits `ItemMetadataSet` if the metadata was not empty.
+		#[pallet::call_index(36)]
+		#[pallet::weight(T::NftsWeightInfo::mint_pre_signed(mint_data.attributes.len() as u32))]
+		pub fn mint_pre_signed(
+			origin: OriginFor<T>,
+			mint_data: Box<PreSignedMintOf<T, I>>,
+			signature: T::OffchainSignature,
+			signer: T::AccountId,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::mint_pre_signed(origin, mint_data, signature, signer)
+		}
+
+		/// Allows to pay the tips.
+		///
+		/// Origin must be Signed.
+		///
+		/// - `tips`: Tips array.
+		///
+		/// Emits `TipSent` on every tip transfer.
+		#[pallet::call_index(37)]
+		#[pallet::weight(T::NftsWeightInfo::pay_tips(tips.len() as u32))]
+		pub fn pay_tips(
+			origin: OriginFor<T>,
+			tips: BoundedVec<ItemTipOf<T, I>, T::MaxTips>,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::pay_tips(origin, tips)
+		}
+
+		/// Set (or reset) the acceptance of ownership for a particular account.
+		///
+		/// Origin must be `Signed` and if `maybe_collection` is `Some`, then the signer must have a
+		/// provider reference.
+		///
+		/// - `maybe_collection`: The identifier of the collection whose ownership the signer is
+		///   willing to accept, or if `None`, an indication that the signer is willing to accept no
+		///   ownership transferal.
+		///
+		/// Emits `OwnershipAcceptanceChanged`.
+		#[pallet::call_index(38)]
+		#[pallet::weight(T::NftsWeightInfo::set_accept_ownership())]
+		pub fn set_accept_ownership(
+			origin: OriginFor<T>,
+			maybe_collection: Option<T::CollectionId>,
+		) -> DispatchResult {
+			pallet_nfts::Pallet::<T, I>::set_accept_ownership(origin, maybe_collection)
 		}
 	}
 }
