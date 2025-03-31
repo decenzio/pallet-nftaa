@@ -120,6 +120,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 			(account(2), 100_000_000_000), // Second test account
 			(account(3), 100_000_000_000), // Third test account
 		],
+		dev_accounts: None
 	}
 	.assimilate_storage(&mut t)
 	.unwrap();
