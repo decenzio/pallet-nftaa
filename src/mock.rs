@@ -66,9 +66,9 @@ impl pallet_nfts::Config for Test {
 	type MetadataDepositBase = ConstU64<1>;
 	type AttributeDepositBase = ConstU64<1>;
 	type DepositPerByte = ConstU64<1>;
-	type StringLimit = ConstU32<50>;
-	type KeyLimit = ConstU32<50>;
-	type ValueLimit = ConstU32<50>;
+	type StringLimit = ConstU32<256>;
+	type KeyLimit = ConstU32<64>;
+	type ValueLimit = ConstU32<256>;
 	type ApprovalsLimit = ConstU32<10>;
 	type ItemAttributesApprovalsLimit = ConstU32<2>;
 	type MaxTips = ConstU32<10>;
